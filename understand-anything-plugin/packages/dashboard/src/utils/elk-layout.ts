@@ -1,4 +1,3 @@
-import ELK from "elkjs/lib/elk.bundled.js";
 import type { GraphIssue } from "@understand-anything/core/schema";
 import { NODE_WIDTH, NODE_HEIGHT } from "./layout";
 
@@ -211,7 +210,19 @@ export function repairElkInput(
   };
 }
 
-const elk = new ELK();
+// Lazily import ELK so the ~1.4MB layout engine ships as a separate async chunk
+// loaded on first layout, instead of bloating the initial bundle — the app shell
+// and token gate paint before ELK is fetched.
+type ElkEngine = { layout: (graph: unknown) => Promise<unknown> };
+let _elkPromise: Promise<ElkEngine> | null = null;
+function getElk(): Promise<ElkEngine> {
+  if (!_elkPromise) {
+    _elkPromise = import("elkjs/lib/elk.bundled.js").then(
+      (m) => new (m.default as new () => ElkEngine)(),
+    );
+  }
+  return _elkPromise;
+}
 
 export interface ElkLayoutOptions {
   strict?: boolean;
@@ -228,6 +239,7 @@ export async function applyElkLayout(
 ): Promise<ElkLayoutResult> {
   const { input: repaired, issues } = repairElkInput(input, opts);
   try {
+    const elk = await getElk();
     const positioned = (await elk.layout(repaired as never)) as ElkInput;
     return { positioned, issues };
   } catch (err) {
