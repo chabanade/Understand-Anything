@@ -76,7 +76,7 @@ export const ko = {
     learn: "학습",
     learnDesc: "가이드 학습 포함 완전 대시보드",
     deepDive: "심층",
-    deepDiveDesc: "코드 중심 채팅",
+    deepDiveDesc: "코드 중심: 유형 및 복잡도 통계",
   },
   sidebar: {
     info: "정보",

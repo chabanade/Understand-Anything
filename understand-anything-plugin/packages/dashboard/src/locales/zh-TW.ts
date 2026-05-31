@@ -76,7 +76,7 @@ export const zhTW = {
     learn: "學習",
     learnDesc: "完整儀表板與導覽學習",
     deepDive: "深入",
-    deepDiveDesc: "程式碼聚焦與對話",
+    deepDiveDesc: "程式碼聚焦：型別與複雜度統計",
   },
   sidebar: {
     info: "資訊",

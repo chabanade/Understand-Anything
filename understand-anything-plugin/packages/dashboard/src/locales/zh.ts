@@ -76,7 +76,7 @@ export const zh = {
     learn: "学习",
     learnDesc: "完整仪表盘与导览学习",
     deepDive: "深入",
-    deepDiveDesc: "代码聚焦与对话",
+    deepDiveDesc: "代码聚焦：类型与复杂度统计",
   },
   sidebar: {
     info: "信息",

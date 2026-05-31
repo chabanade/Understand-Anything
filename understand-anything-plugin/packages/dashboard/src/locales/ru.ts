@@ -76,7 +76,7 @@ export const ru = {
     learn: "Обучение",
     learnDesc: "Полная панель с пошаговым обучением",
     deepDive: "Погружение",
-    deepDiveDesc: "Фокус на коде с чатом",
+    deepDiveDesc: "Фокус на коде: статистика типов и сложности",
   },
   sidebar: {
     info: "Информация",

@@ -76,7 +76,7 @@ export const ja = {
     learn: "学習",
     learnDesc: "ガイド付き学習付き完全ダッシュボード",
     deepDive: "詳細",
-    deepDiveDesc: "コード中心のチャット",
+    deepDiveDesc: "コード中心：型と複雑度の統計",
   },
   sidebar: {
     info: "情報",

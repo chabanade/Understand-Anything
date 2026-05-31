@@ -76,7 +76,7 @@ export const en = {
     learn: "Learn",
     learnDesc: "Full dashboard with guided learning",
     deepDive: "Deep Dive",
-    deepDiveDesc: "Code-focused with chat",
+    deepDiveDesc: "Code-focused: type & complexity stats",
   },
   sidebar: {
     info: "Info",
