@@ -25,6 +25,7 @@ import { ThemePicker } from "./components/ThemePicker.tsx";
 import { LanguagePicker } from "./components/LanguagePicker.tsx";
 import type { ThemeConfig } from "./themes/index.ts";
 import { I18nProvider, useI18n } from "./contexts/I18nContext.tsx";
+import { shouldUseKnowledgeView } from "./utils/viewMode";
 
 // Lazy-load heavy / optional components so they ship in separate chunks.
 const CodeViewer = lazy(() => import("./components/CodeViewer"));
@@ -162,7 +163,12 @@ function Dashboard({ accessToken }: { accessToken: string }) {
               });
             })
             .catch(() => {});
-          if ((data as Record<string, unknown>).kind === "knowledge") {
+          if (
+            shouldUseKnowledgeView(
+              (data as Record<string, unknown>).kind as string | undefined,
+              result.data.nodes,
+            )
+          ) {
             useDashboardStore.getState().setViewMode("knowledge");
             useDashboardStore.getState().setIsKnowledgeGraph(true);
           }
