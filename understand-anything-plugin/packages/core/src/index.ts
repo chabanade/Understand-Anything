@@ -122,3 +122,8 @@ export {
   type IgnoreFilter,
 } from "./ignore-filter.js";
 export { generateStarterIgnoreFile } from "./ignore-generator.js";
+export {
+  redactSecrets,
+  type SecretFinding,
+  type RedactionResult,
+} from "./secret-scanner.js";

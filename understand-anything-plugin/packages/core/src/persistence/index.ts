@@ -130,6 +130,35 @@ export function loadFingerprints(projectRoot: string): FingerprintStore | null {
   }
 }
 
+const EMBEDDINGS_FILE = "embeddings.json";
+
+/** Sidecar holding per-node embedding vectors for semantic search. */
+export interface EmbeddingStore {
+  /** Model identifier the vectors were produced with (for traceability). */
+  model: string;
+  /** Vector dimensionality. */
+  dim: number;
+  /** nodeId → embedding vector. */
+  vectors: Record<string, number[]>;
+}
+
+export function saveEmbeddings(projectRoot: string, store: EmbeddingStore): void {
+  const dir = ensureDir(projectRoot);
+  writeFileSync(join(dir, EMBEDDINGS_FILE), JSON.stringify(store), "utf-8");
+}
+
+export function loadEmbeddings(projectRoot: string): EmbeddingStore | null {
+  const filePath = join(projectRoot, UA_DIR, EMBEDDINGS_FILE);
+  if (!existsSync(filePath)) return null;
+  try {
+    const data = JSON.parse(readFileSync(filePath, "utf-8")) as EmbeddingStore;
+    if (!data || typeof data !== "object" || typeof data.vectors !== "object") return null;
+    return data;
+  } catch {
+    return null;
+  }
+}
+
 const DEFAULT_CONFIG: ProjectConfig = { autoUpdate: false, outputLanguage: "en" };
 
 export function saveConfig(projectRoot: string, config: ProjectConfig): void {

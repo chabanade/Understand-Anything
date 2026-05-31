@@ -15,7 +15,9 @@ Analyze the current codebase and produce a `knowledge-graph.json` file in `.unde
   - `--auto-update` — Enable automatic graph updates on commit (writes `autoUpdate: true` to `.understand-anything/config.json`)
   - `--no-auto-update` — Disable automatic graph updates (writes `autoUpdate: false` to `.understand-anything/config.json`)
   - `--review` — Run full LLM graph-reviewer instead of inline deterministic validation
-  - `--language <lang>` — Generate all textual content (summaries, descriptions, tags, titles, languageNotes, languageLesson) in the specified language. Accepts ISO 639-1 codes (`zh`, `ja`, `ko`, `en`, `es`, `fr`, `de`, etc.) or friendly names (`chinese`, `japanese`, `korean`, `english`, `spanish`, etc.). Locale variants supported: `zh-TW`, `zh-HK`, etc. Defaults to `en` (English). Stores preference in `.understand-anything/config.json` for consistency across incremental updates.
+  - `--language <lang>` — Generate all textual content (summaries, descriptions, tags, titles, languageNotes, languageLesson) in the specified language. Accepts ISO 639-1 codes (`zh`, `ja`, `ko`, `en`, `es`, `fr`, `de`, etc.) or friendly names (`chinese`, `japanese`, `korean`, `english`, `spanish`, `french`, etc.). Locale variants supported: `zh-TW`, `zh-HK`, etc. Defaults to `en` (English). Stores preference in `.understand-anything/config.json` for consistency across incremental updates.
+  - `--max-files <N>` — Cap the LLM analysis to at most N files (the expensive Phase 2). Use it to bound token cost on large repos. Skipped files are reported explicitly — never silently truncated.
+  - `--embeddings` — Also generate offline semantic-search vectors in Phase 7 (best-effort) using the bundled all-MiniLM-L6-v2 model, written to `.understand-anything/embeddings.json`. Enables the dashboard's "semantic" search mode; without it search is fuzzy only. 100% local — no network, no data leaves the machine.
   - A directory path (e.g. `/path/to/repo` or `../other-project`) — Analyze the given directory instead of the current working directory
 
 ---
@@ -268,7 +270,13 @@ After the subagent completes, read `$PROJECT_ROOT/.understand-anything/intermedi
 Store `importMap` in memory as `$IMPORT_MAP` for use in Phase 2 batch construction.
 Store the file list as `$FILE_LIST` with `fileCategory` metadata for use in Phase 2 batch construction.
 
-**Gate check:** If >100 files, inform the user and suggest scoping with a subdirectory argument. Proceed only if user confirms or add guidance that this may take a while.
+**Cost estimate (before the expensive LLM phase):** From the scan result, sum the `sizeLines` of the files that will be analyzed (categories `code`, `config`, `docs`, `data`) and report a *rough* estimate so the user can decide before paying for Phase 2. Label it clearly as an estimate, not a billing figure:
+> Estimated analysis size: ~{totalFiles} files, ~{sumLines} lines (≈ {sumLines * 12 / 1000}k tokens — rough estimate only; actual LLM token use varies by model and content).
+
+**`--max-files` cap:** If `--max-files <N>` was passed and `totalFiles > N`, keep only the N most important files for Phase 2 — rank by descending fan-in using `$IMPORT_MAP` (files imported by many others first), then prefer `code` over non-code. Store the kept list as `$FILE_LIST` and **report the skipped files explicitly (never truncate silently):**
+> `--max-files {N}`: analyzing the {N} highest-signal files of {totalFiles}. Skipped {totalFiles - N} (e.g. by top-level directory: {dir: count, ...}). Re-run without `--max-files` for the full graph.
+
+**Gate check:** If `--max-files` was not passed and there are >100 files, show the cost estimate above, inform the user, and suggest scoping with a subdirectory argument or `--max-files <N>`. Proceed only if the user confirms (or add guidance that this may take a while).
 
 If the scan result includes `filteredByIgnore > 0`, report:
 > Excluded {filteredByIgnore} files via `.understandignore`.
@@ -278,6 +286,8 @@ If the scan result includes `filteredByIgnore > 0`, report:
 ## Phase 1.5 — BATCH
 
 Report: `[Phase 1.5/7] Computing semantic batches...`
+
+**If `--max-files` capped `$FILE_LIST` in Phase 1:** before batching, rewrite `.understand-anything/intermediate/scan-result.json` so its `files[]` and `importMap` keep only the kept files. `compute-batches.mjs` reads that file, so trimming it here makes the cap propagate to batching and Phase 2 analysis (otherwise the script would re-batch every scanned file and the cap would have no effect).
 
 Run the bundled batching script:
 ```bash
@@ -769,6 +779,12 @@ Report to the user: `[Phase 7/7] Saving knowledge graph...`
      "analyzedFiles": <number of files analyzed>
    }
    ```
+
+3.5. **Generate semantic embeddings — only if `--embeddings` was passed.** Best-effort and **non-fatal**: unlike the fingerprints step, a failure here must NOT abort Phase 7.
+   ```bash
+   node <SKILL_DIR>/build-embeddings.mjs $PROJECT_ROOT
+   ```
+   This writes `.understand-anything/embeddings.json` using the bundled, offline `all-MiniLM-L6-v2` model (no network), enabling the dashboard's "semantic" search mode. If the script exits non-zero, append its `Warning:` stderr to `$PHASE_WARNINGS` and continue — the dashboard automatically falls back to fuzzy search when `embeddings.json` is absent.
 
 4. Clean up intermediate files:
    ```bash

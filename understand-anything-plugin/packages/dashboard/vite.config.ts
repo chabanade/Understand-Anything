@@ -5,12 +5,36 @@ import tailwindcss from "@tailwindcss/vite";
 import path from "path";
 import fs from "fs";
 import crypto from "crypto";
+import { redactSecrets } from "../core/dist/secret-scanner.js";
 
 // Generate a one-time token when the server process starts.
 // This token is printed to the terminal and must be in the URL
 // to fetch knowledge-graph.json or diff-overlay.json.
 const ACCESS_TOKEN = process.env.UNDERSTAND_ACCESS_TOKEN || crypto.randomBytes(16).toString("hex");
 const MAX_SOURCE_FILE_BYTES = 1024 * 1024;
+
+// Lazily-loaded, offline query embedder for semantic search. Uses the bundled
+// all-MiniLM-L6-v2 model (no network); the query never leaves the machine.
+const MODELS_DIR = path.resolve(__dirname, "../../models");
+type Embedder = (
+  text: string,
+  opts: { pooling: "mean"; normalize: boolean },
+) => Promise<{ data: ArrayLike<number> }>;
+let _embedderPromise: Promise<Embedder> | null = null;
+function getQueryEmbedder(): Promise<Embedder> {
+  if (!_embedderPromise) {
+    _embedderPromise = (async () => {
+      const mod = await import("@xenova/transformers");
+      mod.env.allowRemoteModels = false;
+      mod.env.allowLocalModels = true;
+      mod.env.localModelPath = MODELS_DIR;
+      return (await mod.pipeline("feature-extraction", "Xenova/all-MiniLM-L6-v2", {
+        quantized: true,
+      })) as unknown as Embedder;
+    })();
+  }
+  return _embedderPromise;
+}
 
 function graphFileCandidates(fileName: string): string[] {
   const graphDir = process.env.GRAPH_DIR;
@@ -163,7 +187,11 @@ function readSourceFile(url: URL) {
   const buffer = fs.readFileSync(absoluteFile);
   if (buffer.includes(0)) return rejectFileRequest("Binary files cannot be previewed", 415);
 
-  const content = buffer.toString("utf8");
+  const rawContent = buffer.toString("utf8");
+  // Defense-in-depth: redact any secrets embedded in the served file body so
+  // credentials are never exposed in the browser preview (secret *files* are
+  // already excluded from the graph by ignore-filter.ts).
+  const content = redactSecrets(rawContent).redacted;
   return {
     statusCode: 200,
     payload: {
@@ -195,6 +223,8 @@ export default defineConfig({
       "@understand-anything/core/schema": path.resolve(__dirname, "../core/dist/schema.js"),
       "@understand-anything/core/search": path.resolve(__dirname, "../core/dist/search.js"),
       "@understand-anything/core/types": path.resolve(__dirname, "../core/dist/types.js"),
+      "@understand-anything/core/secret-scanner": path.resolve(__dirname, "../core/dist/secret-scanner.js"),
+      "@understand-anything/core/embedding-search": path.resolve(__dirname, "../core/dist/embedding-search.js"),
     },
   },
 
@@ -244,7 +274,7 @@ export default defineConfig({
           );
         });
 
-        server.middlewares.use((req, res, next) => {
+        server.middlewares.use(async (req, res, next) => {
           const url = new URL(req.url ?? "/", "http://127.0.0.1:5173");
           const pathname = url.pathname;
           const isProtectedEndpoint =
@@ -253,7 +283,9 @@ export default defineConfig({
             pathname === "/diff-overlay.json" ||
             pathname === "/meta.json" ||
             pathname === "/config.json" ||
-            pathname === "/file-content.json";
+            pathname === "/file-content.json" ||
+            pathname === "/embeddings.json" ||
+            pathname === "/embed-query.json";
 
           if (!isProtectedEndpoint) {
             next();
@@ -270,6 +302,24 @@ export default defineConfig({
           if (pathname === "/file-content.json") {
             const result = readSourceFile(url);
             sendJson(res, result.statusCode, result.payload);
+            return;
+          }
+
+          if (pathname === "/embed-query.json") {
+            const q = url.searchParams.get("q") ?? "";
+            if (!q.trim()) {
+              sendJson(res, 400, { error: "Missing q" });
+              return;
+            }
+            try {
+              const embed = await getQueryEmbedder();
+              const out = await embed(q, { pooling: "mean", normalize: true });
+              sendJson(res, 200, { vector: Array.from(out.data) });
+            } catch (err) {
+              sendJson(res, 500, {
+                error: `embed failed: ${err instanceof Error ? err.message : String(err)}`,
+              });
+            }
             return;
           }
 
@@ -298,6 +348,8 @@ export default defineConfig({
               ? "meta.json"
               : pathname === "/domain-graph.json"
               ? "domain-graph.json"
+              : pathname === "/embeddings.json"
+              ? "embeddings.json"
               : "knowledge-graph.json";
 
           const candidates = graphFileCandidates(fileName);

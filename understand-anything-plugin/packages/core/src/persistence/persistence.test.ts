@@ -3,7 +3,8 @@ import { mkdtempSync, rmSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { writeFileSync } from "node:fs";
-import { saveGraph, loadGraph, saveMeta, loadMeta, saveFingerprints, loadFingerprints, saveConfig, loadConfig } from "./index.js";
+import { saveGraph, loadGraph, saveMeta, loadMeta, saveFingerprints, loadFingerprints, saveConfig, loadConfig, saveEmbeddings, loadEmbeddings } from "./index.js";
+import type { EmbeddingStore } from "./index.js";
 import type { KnowledgeGraph, AnalysisMeta } from "../types.js";
 import type { FingerprintStore } from "../fingerprint.js";
 
@@ -199,6 +200,32 @@ describe("persistence", () => {
 
       const loaded = loadConfig(tempDir);
       expect(loaded).toEqual({ autoUpdate: false, outputLanguage: "en" });
+    });
+  });
+
+  describe("saveEmbeddings / loadEmbeddings", () => {
+    const sampleEmbeddings: EmbeddingStore = {
+      model: "Xenova/all-MiniLM-L6-v2",
+      dim: 3,
+      vectors: { "node-1": [0.1, 0.2, 0.3], "node-2": [0.4, 0.5, 0.6] },
+    };
+
+    it("should round-trip embeddings correctly", () => {
+      saveEmbeddings(tempDir, sampleEmbeddings);
+      const filePath = join(tempDir, ".understand-anything", "embeddings.json");
+      expect(existsSync(filePath)).toBe(true);
+      expect(loadEmbeddings(tempDir)).toEqual(sampleEmbeddings);
+    });
+
+    it("should return null when no embeddings file exists", () => {
+      expect(loadEmbeddings(tempDir)).toBeNull();
+    });
+
+    it("should return null when embeddings.json is corrupted", () => {
+      saveEmbeddings(tempDir, sampleEmbeddings);
+      const dir = join(tempDir, ".understand-anything");
+      writeFileSync(join(dir, "embeddings.json"), "{{not json", "utf-8");
+      expect(loadEmbeddings(tempDir)).toBeNull();
     });
   });
 });

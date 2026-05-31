@@ -21,6 +21,14 @@
       "types": "./dist/schema.d.ts",
       "default": "./dist/schema.js"
     },
+    "./secret-scanner": {
+      "types": "./dist/secret-scanner.d.ts",
+      "default": "./dist/secret-scanner.js"
+    },
+    "./embedding-search": {
+      "types": "./dist/embedding-search.d.ts",
+      "default": "./dist/embedding-search.js"
+    },
     "./languages": {
       "types": "./dist/languages/index.d.ts",
       "default": "./dist/languages/index.js"

@@ -389,20 +389,28 @@ describe('scan-project.mjs — category assignment (project-scanner.md Step 4)',
   // for `.env.local` — neither hits CATEGORY_BY_EXT['.env']. Dotfile-style
   // configs were falling through to `code` / `unknown`. Caught by Codex
   // review on PR #204.
-  it('dotfile configs (.env, .env.local, .env.production) map to config + env language', () => {
+  it('excludes .env secret files by default, but keeps & detects .env.example templates', () => {
     projectRoot = setupTree({
       '.env': 'API_KEY=abc\n',
       '.env.local': 'LOCAL=1\n',
       '.env.production': 'PROD=1\n',
+      '.env.example': 'API_KEY=\n',
     });
     const r = runScript(projectRoot);
     expect(r.status).toBe(0);
+    // Secret env files are now ignored by default (DEFAULT_IGNORE_PATTERNS),
+    // so they never reach the LLM or the dashboard. They must not appear.
+    // (filteredByIgnore only counts USER .understandignore exclusions, not the
+    // built-in defaults, so we assert absence from files[] directly.)
     for (const p of ['.env', '.env.local', '.env.production']) {
-      expect(byPath(r.output, p).fileCategory).toBe('config');
-      // LANGUAGE_BY_EXT['.env'] -> 'config' (the language id itself; not
-      // a typo — the language for env files is the 'config' bucket).
-      expect(byPath(r.output, p).language).toBe('config');
+      expect(byPath(r.output, p)).toBeUndefined();
     }
+    // ...but committed templates (.env.example) are kept and still detected as
+    // a config dotfile (the PR #204 dotfile-detection logic, unchanged).
+    const example = byPath(r.output, '.env.example');
+    expect(example).toBeDefined();
+    expect(example.fileCategory).toBe('config');
+    expect(example.language).toBe('config');
   });
 });
 

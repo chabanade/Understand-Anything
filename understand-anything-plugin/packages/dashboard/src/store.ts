@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import { SearchEngine } from "@understand-anything/core/search";
 import type { SearchResult } from "@understand-anything/core/search";
+import { SemanticSearchEngine } from "@understand-anything/core/embedding-search";
 import type { GraphIssue } from "@understand-anything/core/schema";
 import type {
   GraphNode,
@@ -109,8 +110,15 @@ interface DashboardStore {
   searchQuery: string;
   searchResults: SearchResult[];
   searchEngine: SearchEngine | null;
+  /** Built from bundled embeddings when present; null = semantic search unavailable. */
+  semanticEngine: SemanticSearchEngine | null;
+  /** Server-side query-embedding fn (set by App when embeddings load), or null. */
+  embedQuery: ((q: string) => Promise<number[] | null>) | null;
   searchMode: "fuzzy" | "semantic";
   setSearchMode: (mode: "fuzzy" | "semantic") => void;
+  /** UI language override chosen in the dashboard; null = follow config.outputLanguage. */
+  uiLocale: string | null;
+  setUiLocale: (locale: string | null) => void;
 
   // Lens navigation
   navigationLevel: NavigationLevel;
@@ -164,6 +172,8 @@ interface DashboardStore {
   navigateToOverview: () => void;
   setFocusNode: (nodeId: string | null) => void;
   setSearchQuery: (query: string) => void;
+  setEmbeddings: (vectors: Record<string, number[]>) => void;
+  setEmbedQuery: (fn: ((q: string) => Promise<number[] | null>) | null) => void;
   setPersona: (persona: Persona) => void;
   openCodeViewer: (nodeId: string) => void;
   closeCodeViewer: () => void;
@@ -286,6 +296,30 @@ function layerResetIfChanged(
   };
 }
 
+// Semantic-search request guard + debounce (module-level: shared across calls).
+let _searchSeq = 0;
+let _semanticTimer: ReturnType<typeof setTimeout> | null = null;
+
+const UI_LOCALE_KEY = "ua-ui-locale";
+
+function loadUiLocale(): string | null {
+  try {
+    return typeof window !== "undefined" ? window.localStorage.getItem(UI_LOCALE_KEY) : null;
+  } catch {
+    return null;
+  }
+}
+
+function saveUiLocale(locale: string | null): void {
+  try {
+    if (typeof window === "undefined") return;
+    if (locale) window.localStorage.setItem(UI_LOCALE_KEY, locale);
+    else window.localStorage.removeItem(UI_LOCALE_KEY);
+  } catch {
+    /* storage unavailable — ignore */
+  }
+}
+
 export const useDashboardStore = create<DashboardStore>()((set, get) => ({
   graph: null,
   nodesById: new Map<string, GraphNode>(),
@@ -295,7 +329,10 @@ export const useDashboardStore = create<DashboardStore>()((set, get) => ({
   searchQuery: "",
   searchResults: [],
   searchEngine: null,
+  semanticEngine: null,
+  embedQuery: null,
   searchMode: "fuzzy",
+  uiLocale: loadUiLocale(),
 
   navigationLevel: "overview",
   activeLayerId: null,
@@ -376,6 +413,7 @@ export const useDashboardStore = create<DashboardStore>()((set, get) => ({
       nodeIdToLayerId,
       nodeIdToLayerIds,
       searchEngine,
+      semanticEngine: null, // rebuilt by setEmbeddings once embeddings load
       searchResults,
       navigationLevel: "overview",
       activeLayerId: null,
@@ -516,19 +554,44 @@ export const useDashboardStore = create<DashboardStore>()((set, get) => ({
       expandedContainers: new Set(),
       pendingFocusContainer: null,
     }),
-  setSearchMode: (mode) => set({ searchMode: mode }),
+  setSearchMode: (mode) => {
+    set({ searchMode: mode });
+    // Re-run the current query so toggling fuzzy/semantic updates results live.
+    const q = get().searchQuery;
+    if (q.trim()) get().setSearchQuery(q);
+  },
+  setUiLocale: (locale) => {
+    saveUiLocale(locale);
+    set({ uiLocale: locale });
+  },
+  setEmbeddings: (vectors) => {
+    const graph = get().graph;
+    if (!graph) return;
+    set({ semanticEngine: new SemanticSearchEngine(graph.nodes, vectors) });
+  },
+  setEmbedQuery: (fn) => set({ embedQuery: fn }),
   setSearchQuery: (query) => {
-    const engine = get().searchEngine;
-    const mode = get().searchMode;
-    if (!engine || !query.trim()) {
-      set({ searchQuery: query, searchResults: [] });
-      return;
-    }
-    // Currently both modes use the same fuzzy engine
-    // When embeddings are available, "semantic" mode will use SemanticSearchEngine
-    void mode;
-    const searchResults = engine.search(query);
-    set({ searchQuery: query, searchResults });
+    const { searchEngine, searchMode, semanticEngine, embedQuery } = get();
+    // Always compute fuzzy results immediately so the input stays responsive.
+    const fuzzy = searchEngine && query.trim() ? searchEngine.search(query) : [];
+    set({ searchQuery: query, searchResults: fuzzy });
+
+    // Semantic mode refines asynchronously (debounced) when embeddings exist.
+    // Anything missing (no engine, no embed fn, empty query) keeps the fuzzy
+    // results — a graceful fallback, never an error.
+    if (_semanticTimer) clearTimeout(_semanticTimer);
+    if (searchMode !== "semantic" || !semanticEngine || !embedQuery || !query.trim()) return;
+    const seq = ++_searchSeq;
+    _semanticTimer = setTimeout(() => {
+      embedQuery(query)
+        .then((vec) => {
+          if (seq !== _searchSeq || !vec) return; // stale response or no vector
+          set({ searchResults: semanticEngine.search(vec) });
+        })
+        .catch(() => {
+          /* keep the fuzzy fallback already shown */
+        });
+    }, 250);
   },
 
   setPersona: (persona) =>

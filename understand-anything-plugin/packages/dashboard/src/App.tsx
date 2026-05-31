@@ -22,6 +22,7 @@ import { useKeyboardShortcuts } from "./hooks/useKeyboardShortcuts";
 import type { KeyboardShortcut } from "./hooks/useKeyboardShortcuts";
 import { ThemeProvider } from "./themes/index.ts";
 import { ThemePicker } from "./components/ThemePicker.tsx";
+import { LanguagePicker } from "./components/LanguagePicker.tsx";
 import type { ThemeConfig } from "./themes/index.ts";
 import { I18nProvider, useI18n } from "./contexts/I18nContext.tsx";
 
@@ -113,6 +114,9 @@ function Dashboard({ accessToken }: { accessToken: string }) {
   const [graphIssues, setGraphIssues] = useState<GraphIssue[]>([]);
   const [metaTheme, setMetaTheme] = useState<ThemeConfig | null>(null);
   const [outputLanguage, setOutputLanguage] = useState<string | undefined>();
+  // Runtime UI-language override picked in the dashboard; falls back to the
+  // project's configured outputLanguage, then English.
+  const uiLocale = useDashboardStore((s) => s.uiLocale);
 
   useEffect(() => {
     fetch(dataUrl("meta.json", accessToken))
@@ -137,6 +141,27 @@ function Dashboard({ accessToken }: { accessToken: string }) {
         if (result.success && result.data) {
           setGraph(result.data);
           setGraphIssues(result.issues);
+          // Semantic search: load bundled embeddings (if /understand --embeddings
+          // was run) and wire the offline query embedder. Absent = fuzzy only.
+          fetch(dataUrl("embeddings.json", accessToken))
+            .then((r) => (r.ok ? r.json() : null))
+            .then((emb) => {
+              if (!emb || typeof emb.vectors !== "object") return;
+              useDashboardStore.getState().setEmbeddings(emb.vectors);
+              useDashboardStore.getState().setEmbedQuery(async (q) => {
+                try {
+                  const r = await fetch(
+                    `${dataUrl("embed-query.json", accessToken)}&q=${encodeURIComponent(q)}`,
+                  );
+                  if (!r.ok) return null;
+                  const j = await r.json();
+                  return Array.isArray(j.vector) ? (j.vector as number[]) : null;
+                } catch {
+                  return null;
+                }
+              });
+            })
+            .catch(() => {});
           if ((data as Record<string, unknown>).kind === "knowledge") {
             useDashboardStore.getState().setViewMode("knowledge");
             useDashboardStore.getState().setIsKnowledgeGraph(true);
@@ -205,7 +230,7 @@ function Dashboard({ accessToken }: { accessToken: string }) {
   }, [setDomainGraph]);
 
   return (
-    <I18nProvider language={outputLanguage ?? "en"}>
+    <I18nProvider language={uiLocale ?? outputLanguage ?? "en"}>
       <ThemeProvider metaTheme={metaTheme}>
         <DashboardContent
           accessToken={accessToken}
@@ -593,6 +618,7 @@ function DashboardContent({
             </svg>
             <span className="hidden md:inline">{t.common.path}</span>
           </button>
+          <LanguagePicker />
           <ThemePicker />
           <button
             onClick={() => setShowKeyboardHelp(true)}

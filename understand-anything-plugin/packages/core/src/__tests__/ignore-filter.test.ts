@@ -84,6 +84,41 @@ describe("IgnoreFilter", () => {
       expect(filter.isIgnored(".idea/workspace.xml")).toBe(true);
       expect(filter.isIgnored(".vscode/settings.json")).toBe(true);
     });
+
+    it("ignores secret / credential files", () => {
+      const filter = createIgnoreFilter(testDir);
+      expect(filter.isIgnored(".env")).toBe(true);
+      expect(filter.isIgnored(".env.local")).toBe(true);
+      expect(filter.isIgnored(".env.production")).toBe(true);
+      expect(filter.isIgnored("config/.env")).toBe(true);
+      expect(filter.isIgnored("server.key")).toBe(true);
+      expect(filter.isIgnored("cert.pem")).toBe(true);
+      expect(filter.isIgnored("keystore.p12")).toBe(true);
+      expect(filter.isIgnored("app.pfx")).toBe(true);
+      expect(filter.isIgnored("release.keystore")).toBe(true);
+      expect(filter.isIgnored("id_rsa")).toBe(true);
+      expect(filter.isIgnored("id_rsa.pub")).toBe(true);
+      expect(filter.isIgnored("id_ed25519")).toBe(true);
+      expect(filter.isIgnored("credentials.json")).toBe(true);
+      expect(filter.isIgnored("credentials.prod.json")).toBe(true);
+      expect(filter.isIgnored("secrets.json")).toBe(true);
+      expect(filter.isIgnored(".npmrc")).toBe(true);
+      expect(filter.isIgnored(".pypirc")).toBe(true);
+    });
+
+    it("keeps committed env example/template files (documentation)", () => {
+      const filter = createIgnoreFilter(testDir);
+      expect(filter.isIgnored(".env.example")).toBe(false);
+      expect(filter.isIgnored(".env.sample")).toBe(false);
+      expect(filter.isIgnored(".env.template")).toBe(false);
+    });
+
+    it("does not over-match ordinary source files", () => {
+      const filter = createIgnoreFilter(testDir);
+      expect(filter.isIgnored("src/environment.ts")).toBe(false);
+      expect(filter.isIgnored("src/keyboard.ts")).toBe(false);
+      expect(filter.isIgnored("monkey.json")).toBe(false);
+    });
   });
 
   describe("createIgnoreFilter with user .understandignore", () => {

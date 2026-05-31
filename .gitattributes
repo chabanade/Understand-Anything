@@ -18,3 +18,10 @@
 *.woff2 binary
 *.wasm  binary
 *.pdf   binary
+
+# Bundled ML model weights (all-MiniLM-L6-v2, ~23MB) shipped for offline
+# semantic search. Stored as a plain binary blob, NOT Git LFS: GitHub does not
+# allow uploading new LFS objects to a public fork (the fork shares the parent's
+# LFS store), so LFS would block `git push`. 23MB is well under GitHub's 100MB
+# per-file limit, so a regular blob is fine.
+*.onnx binary

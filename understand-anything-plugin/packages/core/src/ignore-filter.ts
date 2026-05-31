@@ -67,6 +67,29 @@ export const DEFAULT_IGNORE_PATTERNS: string[] = [
   ".prettierrc",
   ".eslintrc*",
   "*.log",
+
+  // Secrets / credentials — never analyze (so they are never sent to the LLM)
+  // nor exposed by the dashboard file server. Defense-in-depth: the dashboard
+  // also redacts secret-looking content (see secret-scanner.ts).
+  ".env",
+  ".env.*",
+  // ...but keep committed example/template env files, which are documentation.
+  "!.env.example",
+  "!.env.sample",
+  "!.env.template",
+  "*.pem",
+  "*.key",
+  "*.p12",
+  "*.pfx",
+  "*.keystore",
+  "id_rsa*",
+  "id_dsa*",
+  "id_ecdsa*",
+  "id_ed25519*",
+  "credentials*.json",
+  "secrets*.json",
+  ".npmrc",
+  ".pypirc",
 ];
 
 export interface IgnoreFilter {
