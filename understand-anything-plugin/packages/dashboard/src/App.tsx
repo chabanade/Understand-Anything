@@ -15,6 +15,7 @@ import PersonaSelector from "./components/PersonaSelector";
 import ProjectOverview from "./components/ProjectOverview";
 import FileExplorer from "./components/FileExplorer";
 import WarningBanner from "./components/WarningBanner";
+import StalenessBanner from "./components/StalenessBanner";
 import TokenGate from "./components/TokenGate";
 import MobileLayout from "./components/MobileLayout";
 import { useIsMobile } from "./hooks/useIsMobile";
@@ -130,6 +131,13 @@ function Dashboard({ accessToken }: { accessToken: string }) {
       .then((r) => (r.ok ? r.json() : null))
       .then((config) => {
         if (config?.outputLanguage) setOutputLanguage(config.outputLanguage);
+      })
+      .catch(() => {});
+    // Graph freshness: how many commits the repo moved since the graph was built.
+    fetch(dataUrl("staleness.json", accessToken))
+      .then((r) => (r.ok ? r.json() : null))
+      .then((s) => {
+        if (s && s.available) useDashboardStore.getState().setStaleness(s);
       })
       .catch(() => {});
   }, []);
@@ -650,6 +658,9 @@ function DashboardContent({
 
       {/* Search */}
       <SearchBar />
+
+      {/* Graph staleness banner */}
+      <StalenessBanner />
 
       {/* Validation warning banner */}
       {allIssues.length > 0 && !loadError && (

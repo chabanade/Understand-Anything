@@ -2,6 +2,7 @@ import { create } from "zustand";
 import { SearchEngine } from "@understand-anything/core/search";
 import type { SearchResult } from "@understand-anything/core/search";
 import { SemanticSearchEngine } from "@understand-anything/core/embedding-search";
+import type { StalenessInfo } from "./utils/staleness";
 import type { GraphIssue } from "@understand-anything/core/schema";
 import type {
   GraphNode,
@@ -114,6 +115,9 @@ interface DashboardStore {
   semanticEngine: SemanticSearchEngine | null;
   /** Server-side query-embedding fn (set by App when embeddings load), or null. */
   embedQuery: ((q: string) => Promise<number[] | null>) | null;
+  /** How stale the graph is vs the repo HEAD (server-computed), or null. */
+  staleness: StalenessInfo | null;
+  setStaleness: (s: StalenessInfo | null) => void;
   searchMode: "fuzzy" | "semantic";
   setSearchMode: (mode: "fuzzy" | "semantic") => void;
   /** UI language override chosen in the dashboard; null = follow config.outputLanguage. */
@@ -331,6 +335,7 @@ export const useDashboardStore = create<DashboardStore>()((set, get) => ({
   searchEngine: null,
   semanticEngine: null,
   embedQuery: null,
+  staleness: null,
   searchMode: "fuzzy",
   uiLocale: loadUiLocale(),
 
@@ -570,6 +575,7 @@ export const useDashboardStore = create<DashboardStore>()((set, get) => ({
     set({ semanticEngine: new SemanticSearchEngine(graph.nodes, vectors) });
   },
   setEmbedQuery: (fn) => set({ embedQuery: fn }),
+  setStaleness: (s) => set({ staleness: s }),
   setSearchQuery: (query) => {
     const { searchEngine, searchMode, semanticEngine, embedQuery } = get();
     // Always compute fuzzy results immediately so the input stays responsive.

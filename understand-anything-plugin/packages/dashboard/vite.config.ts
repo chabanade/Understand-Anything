@@ -6,6 +6,7 @@ import path from "path";
 import fs from "fs";
 import crypto from "crypto";
 import { redactSecrets } from "../core/dist/secret-scanner.js";
+import { execFileSync } from "node:child_process";
 
 // Generate a one-time token when the server process starts.
 // This token is printed to the terminal and must be in the URL
@@ -285,7 +286,8 @@ export default defineConfig({
             pathname === "/config.json" ||
             pathname === "/file-content.json" ||
             pathname === "/embeddings.json" ||
-            pathname === "/embed-query.json";
+            pathname === "/embed-query.json" ||
+            pathname === "/staleness.json";
 
           if (!isProtectedEndpoint) {
             next();
@@ -296,6 +298,41 @@ export default defineConfig({
           // Requests without a matching ?token= get a 403.
           if (url.searchParams.get("token") !== ACCESS_TOKEN) {
             sendJson(res, 403, { error: "Forbidden: missing or invalid token" });
+            return;
+          }
+
+          if (pathname === "/staleness.json") {
+            // How many commits the analyzed repo has moved since the graph was
+            // built (graph staleness). Computed server-side via git; degrades to
+            // { available: false } when there's no meta/git/commit to compare.
+            try {
+              const metaFile = findGraphFile("meta.json");
+              if (!metaFile) {
+                sendJson(res, 200, { available: false });
+                return;
+              }
+              const meta = JSON.parse(fs.readFileSync(metaFile, "utf-8")) as {
+                gitCommitHash?: string;
+              };
+              const graphCommit = meta.gitCommitHash;
+              if (!graphCommit || graphCommit === "local") {
+                sendJson(res, 200, { available: false });
+                return;
+              }
+              const projectRoot = projectRootFromGraphFile(metaFile);
+              const out = execFileSync(
+                "git",
+                ["-C", projectRoot, "rev-list", "--count", `${graphCommit}..HEAD`],
+                { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] },
+              ).trim();
+              sendJson(res, 200, {
+                available: true,
+                commitsBehind: parseInt(out, 10) || 0,
+                graphCommit,
+              });
+            } catch {
+              sendJson(res, 200, { available: false });
+            }
             return;
           }
 
